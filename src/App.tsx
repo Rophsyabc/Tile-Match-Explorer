@@ -80,6 +80,7 @@ export default function App() {
   const [achievements, setAchievements] = useState<Record<string, any>>({});
   const [pet, setPet] = useState({ name: 'Sparky', level: 1, exp: 0, mood: 'neutral' as const });
   const [gameScale, setGameScale] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Load all initial state from LocalStorage for immediate start
   useEffect(() => {
@@ -328,7 +329,7 @@ export default function App() {
   }, [status, startTime]);
 
   const handleTileClick = (clickedTile: GameTile) => {
-    if (status !== 'playing' || tray.length >= TRAY_SIZE) return;
+    if (status !== 'playing' || tray.length >= TRAY_SIZE || isProcessing) return;
     if (clickedTile.isLocked) {
       audioService.play('LOSE');
       return;
@@ -337,7 +338,7 @@ export default function App() {
     audioService.play('CLICK');
     setHistory(prev => [...prev, { board: [...board], tray: [...tray] }]);
 
-    // Special Tile Handling
+    // Special Tile Handling - Ice
     if (clickedTile.special === 'ice' && clickedTile.health && clickedTile.health > 1) {
       setBoard(prev => prev.map(t => 
         t.instanceId === clickedTile.instanceId ? { ...t, health: (t.health || 0) - 1 } : t
@@ -352,17 +353,30 @@ export default function App() {
 
     const newBoard = board.filter(t => t.instanceId !== clickedTile.instanceId);
     setBoard(updateBlockedStatus(newBoard));
-    const newTray = [...tray, { ...clickedTile, isHinted: false, special: undefined }]; // Strip special when in tray
-    const insertIndex = newTray.findIndex(t => t.id === clickedTile.id);
-    if (insertIndex !== -1) {
-      const withoutNew = newTray.filter(t => t.instanceId !== clickedTile.instanceId);
-      withoutNew.splice(insertIndex, 0, clickedTile);
-      setTray(withoutNew);
-      checkMatches(withoutNew, newBoard);
+
+    // Smart Tray Insertion Logic (Grouping)
+    const trayTile = { ...clickedTile, isHinted: false, special: undefined }; // Clean version
+    const existingGroupIndices = tray.reduce((acc: number[], t, idx) => {
+      if (t.id === trayTile.id) acc.push(idx);
+      return acc;
+    }, []);
+
+    let newTray: GameTile[];
+    if (existingGroupIndices.length > 0) {
+      const lastIndex = existingGroupIndices[existingGroupIndices.length - 1];
+      newTray = [...tray];
+      newTray.splice(lastIndex + 1, 0, trayTile);
     } else {
-      setTray(newTray);
-      checkMatches(newTray, newBoard);
+      newTray = [...tray, trayTile];
     }
+
+    setIsProcessing(true);
+    setTray(newTray);
+    
+    // Check matches after a short delay for animation
+    setTimeout(() => {
+      checkMatches(newTray, newBoard);
+    }, 300);
     
     // Pet reaction
     setPet(prev => ({ ...prev, mood: 'happy', exp: prev.exp + 1 }));
@@ -415,8 +429,13 @@ export default function App() {
 
     if (matchId) {
       audioService.play('MATCH');
+      updateCombo();
+      
       setTimeout(() => {
-        setTray(prev => prev.filter(t => t.id !== matchId));
+        const afterMatchTray = currentTray.filter(t => t.id !== matchId);
+        setTray(afterMatchTray);
+        setIsProcessing(false); // Reset after clearing
+
         if (currentBoard.length === 0) {
           setStatus('won');
           audioService.play('WIN');
@@ -434,32 +453,31 @@ export default function App() {
             }
           }
 
-          // Apply combo bonus to stars or coins
           const bonus = calculateComboBonus(comboMultiplier);
-          const finalCoins = coins + 20 + bonus; // Base 20 + combo bonus
+          const finalCoins = coins + 20 + bonus;
           setCoins(finalCoins);
-
           saveProgress(nextLevel, nextUnlocked, nextStars, nextDaily, finalCoins);
           
-          confetti({
-            particleCount: 150,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
+          confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
         } else {
-          // If match happened but didn't win yet, still check for combo
-          updateCombo();
+          // Normal match, show small effect
           confetti({
-            particleCount: 50,
-            spread: 40,
+            particleCount: 40,
+            spread: 50,
             origin: { y: 0.8 },
             colors: ['#fbbf24', '#f59e0b', '#fb7185']
           });
         }
-      }, 300);
-    } else if (currentTray.length >= TRAY_SIZE) {
-      setStatus('lost');
-      audioService.play('LOSE');
+      }, 500);
+    } else {
+      setIsProcessing(false); // Reset immediately if no match
+      
+      // If tray is full and no match was found, game is lost
+      if (currentTray.length >= TRAY_SIZE) {
+        setStatus('lost');
+        audioService.play('LOSE');
+        setPet(p => ({ ...p, mood: 'sad' }));
+      }
     }
   };
 

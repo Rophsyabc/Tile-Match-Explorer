@@ -248,10 +248,14 @@ export const calculateComboBonus = (multiplier: number): number => {
 export const updateBlockedStatus = (tiles: GameTile[]): GameTile[] => {
   return tiles.map(tile => {
     const isBlocked = tiles.some(other => {
+      // Only tiles on higher layers can block
       if (other.z <= tile.z || other.instanceId === tile.instanceId) return false;
+      
+      // Geometric overlap check
+      // A tile is blocked if a higher tile covers more than ~15% of its area
       const dx = Math.abs(other.x - tile.x);
       const dy = Math.abs(other.y - tile.y);
-      return dx < 0.7 && dy < 0.7;
+      return dx < 0.85 && dy < 0.85;
     });
     return { ...tile, isBlocked };
   });
