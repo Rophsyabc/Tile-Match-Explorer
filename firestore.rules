@@ -1,0 +1,104 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required) - Owner UID
+//   - displayName: string (required, max 50) - User name
+//   - photoURL: string (optional) - Avatar
+//   - level: number (optional) - Max level
+//   - totalStars: number (optional) - Total stars
+//   - bestStars: map (optional) - Level to stars map
+//   - lastDailyDate: string (optional) - YYYY-MM-DD
+//
+// Collection: leaderboard
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required) - Owner UID
+//   - displayName: string (required, max 50) - User name
+//   - score: number (required) - Total points
+//   - level: number (required) - Max level
+//   - updatedAt: timestamp (required) - Last update time
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "rophsynathaniel@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1000)) &&
+             (!('level' in data) || (data.level is number && data.level >= 1)) &&
+             (!('totalStars' in data) || (data.totalStars is number && data.totalStars >= 0)) &&
+             (!('coins' in data) || (data.coins is number && data.coins >= 0)) &&
+             (!('bestStars' in data) || (data.bestStars is map)) &&
+             (!('lastDailyDate' in data) || (data.lastDailyDate is string && data.lastDailyDate.matches("^\\d{4}-\\d{2}-\\d{2}$")));
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
+             data.score is number && data.score >= 0 &&
+             data.level is number && data.level >= 1 &&
+             data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can only read their own private data
+      allow read: if isOwner(userId) || isAdmin();
+      
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                    request.resource.data.uid == resource.data.uid; // UID immutable
+    }
+
+    match /leaderboard/{userId} {
+      // Leaderboard is public for reading (top scores)
+      allow read: if isAuthenticated();
+      
+      allow create: if isOwner(userId) && isValidLeaderboardEntry(request.resource.data);
+      
+      allow update: if isOwner(userId) && isValidLeaderboardEntry(request.resource.data) &&
+                    request.resource.data.uid == resource.data.uid; // UID immutable
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and progress",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User's public name" },
+        "photoURL": { "type": "string", "description": "User's avatar URL" },
+        "level": { "type": "number", "description": "Current unlocked level" },
+        "totalStars": { "type": "number", "description": "Sum of all stars earned" },
+        "coins": { "type": "number", "description": "User's currency balance" },
+        "bestStars": { "type": "object", "description": "Map of level to stars" },
+        "lastDailyDate": { "type": "string", "description": "Last completed daily challenge date" }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "LeaderboardEntry": {
+      "title": "Leaderboard Entry",
+      "description": "Public score for the global leaderboard",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User UID" },
+        "displayName": { "type": "string", "description": "User name" },
+        "score": { "type": "number", "description": "Total stars * 100" },
+        "level": { "type": "number", "description": "Max level reached" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "score", "level"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "Private user data"
+    },
+    "/leaderboard/{uid}": {
+      "schema": "LeaderboardEntry",
+      "description": "Public leaderboard data"
+    }
+  }
+}
